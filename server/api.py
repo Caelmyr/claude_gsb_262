@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request, send_file
 from PIL import Image, ImageChops
 
 from . import config, pipeline as pipeline_engine
-from .algorithms import detection, features, segmentation, style, util
+from .algorithms import detection, features, rectify, segmentation, style, util
 from .batch import BatchManager, process_image
 from .cache import ResultCache, make_key
 from .history import HistoryManager
@@ -442,6 +442,74 @@ def run_style():
     data = request.get_json(silent=True) or {}
     params = {"style": data.get("style", "oil"), "strength": data.get("strength", 100)}
     res, err = _run_op(data.get("image_id"), "style", params, style.apply)
+    if err:
+        return err[0], err[1]
+    return jsonify(res)
+
+
+# ---------------------------------------------------------------------------
+# 文档矫正：自动摆正 / 透视校正
+# ---------------------------------------------------------------------------
+@bp.post("/rectify/detect-skew")
+def rectify_detect_skew():
+    """只检测倾斜角（不落结果图），返回摆正角与置信度供前端预览。"""
+    data = request.get_json(silent=True) or {}
+    rec, img = _load_full_image(data.get("image_id"))
+    if not rec:
+        return jsonify({"error": "图像不存在"}), 404
+    work = util.downscale_to_max(util.ensure_rgb(img), config.MAX_DIM)
+    params = {"max_angle": data.get("max_angle", 45)}
+    info = rectify.detect_skew(work, params)
+    return jsonify(info)
+
+
+@bp.post("/rectify/straighten")
+def rectify_straighten():
+    """自动/手动角度摆正。angle 给数值时按该角度旋转（手动微调）；否则自动检测。"""
+    data = request.get_json(silent=True) or {}
+    params = {"trim": data.get("trim", True), "max_angle": data.get("max_angle", 45)}
+    if data.get("angle") is not None:
+        params["angle"] = float(data["angle"])
+        params["auto"] = False
+    else:
+        params["auto"] = True
+    res, err = _run_op(data.get("image_id"), "straighten", params, rectify.straighten)
+    if err:
+        return err[0], err[1]
+    return jsonify(res)
+
+
+@bp.post("/rectify/detect-quad")
+def rectify_detect_quad():
+    """检测文档四角点。返回归一化坐标 + 角点叠加预览图（结果入缓存）。"""
+    data = request.get_json(silent=True) or {}
+    params = {}
+
+    def _fn(work, p):
+        return rectify.detect_document_quad(work, p)
+
+    res, err = _run_op(data.get("image_id"), "detect_quad", params, _fn)
+    if err:
+        return err[0], err[1]
+    return jsonify(res)
+
+
+@bp.post("/rectify/perspective")
+def rectify_perspective():
+    """按四角点做透视校正。corners 为归一化 [[x,y]×4]（TL,TR,BR,BL）。"""
+    data = request.get_json(silent=True) or {}
+    corners = data.get("corners")
+    if not corners or len(corners) != 4:
+        return jsonify({"error": "需要 4 个角点"}), 400
+    params = {"corners": corners, "normalized": True,
+              "trim": data.get("trim", True)}
+    if data.get("target_aspect"):
+        params["target_aspect"] = float(data["target_aspect"])
+
+    def _fn(work, p):
+        return rectify.perspective_correct(work, p)
+
+    res, err = _run_op(data.get("image_id"), "perspective", params, _fn)
     if err:
         return err[0], err[1]
     return jsonify(res)

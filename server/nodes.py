@@ -9,6 +9,7 @@ from .algorithms import detection as _detection
 from .algorithms import features as _features
 from .algorithms import filters as _filters
 from .algorithms import geometry as _geometry
+from .algorithms import rectify as _rectify
 from .algorithms import segmentation as _segmentation
 from .algorithms import style as _style
 
@@ -33,6 +34,16 @@ def _number(key, label, default=0, desc=""):
 
 def _pick_color(key, label, default="#000000", desc=""):
     return {"key": key, "label": label, "type": "color", "default": default, "desc": desc}
+
+
+_DEFAULT_CORNERS = [[0.08, 0.08], [0.92, 0.08], [0.92, 0.92], [0.08, 0.92]]
+
+
+def _corners_param():
+    """四角点参数（TL,TR,BR,BL 归一化坐标 JSON 字符串）。"""
+    return {"key": "corners", "label": "四角点（TL,TR,BR,BL 归一化坐标 JSON）",
+            "type": "corners", "default": _DEFAULT_CORNERS,
+            "desc": "例如 [[0.1,0.05],[0.9,0.08],[0.95,0.95],[0.05,0.9]]"}
 
 
 def _wrap(fn):
@@ -178,6 +189,23 @@ NODES["border"] = _node(
     "border", "边框", "几何",
     [_range("width", "宽度", 0, 100, 1, 10), _pick_color("color", "颜色", "#000000")],
     _geometry.border, desc="加边框")
+
+NODES["auto_straighten"] = _node(
+    "auto_straighten", "自动摆正", "几何",
+    [_bool("auto", "自动检测角度", True),
+     _range("angle", "手动角度微调", -45, 45, 0.1, 0,
+            "关闭自动检测后，按此角度旋转摆正"),
+     _bool("trim", "裁掉白边", True)],
+    _rectify.straighten,
+    desc="自动检测水平/竖直方向并旋转摆正，角度可手动微调")
+
+NODES["perspective"] = _node(
+    "perspective", "透视校正", "几何",
+    [_corners_param(),
+     _bool("trim", "裁掉白边", True)],
+    _rectify.perspective_correct,
+    default_overrides={"normalized": True},
+    desc="按四条边把透视梯形拉回正矩形（corner 为 TL,TR,BR,BL 归一化坐标）")
 
 NODES["keypoints"] = _node(
     "keypoints", "特征提取", "计算机视觉",

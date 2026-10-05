@@ -229,3 +229,36 @@ input[type="color"] { width: 100%; height: 34px; border: 1px solid var(--border-
 
 .keypoint-stats { font-size: 12px; color: var(--text-dim); }
 .desc-preview { font-family: var(--mono); font-size: 11px; color: var(--text-faint); word-break: break-all; max-height: 90px; overflow: auto; background: var(--bg-soft); padding: 8px; border-radius: var(--radius-sm); }
+
+/* ---------- 文档矫正 ---------- */
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mode-tab {
+  padding: 9px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+  background: var(--bg-soft); color: var(--text-dim); cursor: pointer; font-size: 13px; font-family: inherit;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.mode-tab:hover { background: var(--bg-hover); color: var(--text); }
+.mode-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+.rectify-wrap { min-height: 320px; }
+.rectify-wrap #rc-before { width: 100%; display: block; }
+.rectify-wrap .rc-after-clip {
+  position: absolute; inset: 0; overflow: hidden; z-index: 2;
+  clip-path: inset(0 0 0 50%);   /* 默认显示右半：右侧为矫正结果，左侧为原图 */
+}
+.rectify-wrap #rc-after {
+  position: absolute; display: block;
+}
+.rectify-wrap #rc-after.placeholder { visibility: hidden; }
+.rectify-wrap .rc-overlay-clip {
+  position: absolute; inset: 0; overflow: hidden; z-index: 3;
+  clip-path: inset(0 50% 0 0);   /* 覆盖层只在左侧原图区 */
+}
+.rectify-wrap #rc-overlay {
+  position: absolute; left: 0; top: 0;
+}
+.rectify-wrap .rc-overlay-clip:hover #rc-overlay { cursor: default; }
+.rectify-wrap #rc-empty { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 4; background: var(--bg-soft); }
+.rectify-wrap #rc-empty[hidden] { display: none; }
+.corner-list { background: var(--bg-soft); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+textarea.corners-input:focus { outline: none; border-color: var(--accent); }
