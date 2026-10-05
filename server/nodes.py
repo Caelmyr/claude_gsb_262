@@ -9,6 +9,7 @@ from .algorithms import detection as _detection
 from .algorithms import features as _features
 from .algorithms import filters as _filters
 from .algorithms import geometry as _geometry
+from .algorithms import rectify as _rectify
 from .algorithms import segmentation as _segmentation
 from .algorithms import style as _style
 
@@ -162,6 +163,19 @@ NODES["rotate"] = _node(
     "rotate", "旋转", "几何",
     [_range("angle", "角度", -180, 180, 1, 0), _bool("expand", "扩展画布", True)],
     _geometry.rotate, desc="旋转图像")
+
+NODES["auto_deskew"] = _node(
+    "auto_deskew", "自动摆正", "几何",
+    [_range("manual", "手动微调(度)", -45, 45, 0.1, 0, "叠加在自动检测角上的微调量"),
+     _bool("autocrop", "自动裁白边", True)],
+    _rectify.node_deskew,
+    desc="自动检测倾斜并旋转摆正；manual 可在检测结果上手动微调")
+
+NODES["perspective_correct"] = _node(
+    "perspective_correct", "透视校正", "几何",
+    [_bool("auto_corners", "自动检测四角", True)],
+    _rectify.node_perspective,
+    desc="自动检测文档四角，把侧面拍摄的梯形拉回正矩形")
 
 NODES["crop"] = _node(
     "crop", "裁剪", "几何",

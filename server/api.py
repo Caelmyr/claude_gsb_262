@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request, send_file
 from PIL import Image, ImageChops
 
 from . import config, pipeline as pipeline_engine
-from .algorithms import detection, features, segmentation, style, util
+from .algorithms import detection, features, rectify, segmentation, style, util
 from .batch import BatchManager, process_image
 from .cache import ResultCache, make_key
 from .history import HistoryManager
@@ -442,6 +442,85 @@ def run_style():
     data = request.get_json(silent=True) or {}
     params = {"style": data.get("style", "oil"), "strength": data.get("strength", 100)}
     res, err = _run_op(data.get("image_id"), "style", params, style.apply)
+    if err:
+        return err[0], err[1]
+    return jsonify(res)
+
+
+# ---------------------------------------------------------------------------
+# 文档矫正：倾斜摆正 / 透视校正
+# ---------------------------------------------------------------------------
+@bp.post("/rectify/skew")
+def rectify_skew():
+    """检测倾斜角。返回角度与置信度，不产生结果图（摆正由 /rectify/deskew 做）。"""
+    data = request.get_json(silent=True) or {}
+    rec, img = _load_full_image(data.get("image_id"))
+    if not rec:
+        return jsonify({"error": "图像不存在"}), 404
+    work = util.downscale_to_max(util.ensure_rgb(img), config.MAX_DIM)
+    params = {"max_angle": data.get("max_angle", 45)}
+    key = make_key(rec["hash"], "skew-detect", json.dumps(params, sort_keys=True))
+    cached = cache.get(key)
+    if cached:
+        entry = cache.get_entry(cached) or {}
+        return jsonify({"cache_hit": True, **entry.get("meta", {})})
+    result = rectify.detect_skew_angle(work, params)
+    # 角度检测只返回数值，不产生有意义的结果图；用一个小占位图登记缓存
+    cache.put(key, util.ensure_rgb(work).resize((1, 1)), result)
+    return jsonify({"cache_hit": False, **result})
+
+
+@bp.post("/rectify/deskew")
+def rectify_deskew():
+    """按角度旋转摆正（angle 可来自自动检测或手动微调），自动裁白边。"""
+    data = request.get_json(silent=True) or {}
+    params = {
+        "angle": float(data.get("angle", 0)),
+        "autocrop": bool(data.get("autocrop", True)),
+    }
+    res, err = _run_op(data.get("image_id"), "deskew", params, rectify.deskew)
+    if err:
+        return err[0], err[1]
+    return jsonify(res)
+
+
+@bp.post("/rectify/corners")
+def rectify_corners():
+    """检测文档四角，返回角点坐标（原图像素）与检测框预览图。"""
+    data = request.get_json(silent=True) or {}
+    rec, img = _load_full_image(data.get("image_id"))
+    if not rec:
+        return jsonify({"error": "图像不存在"}), 404
+    work = util.downscale_to_max(util.ensure_rgb(img), config.MAX_DIM)
+    params = {}
+    key = make_key(rec["hash"], "corners-detect")
+    cached = cache.get(key)
+    if cached:
+        entry = cache.get_entry(cached) or {}
+        return jsonify({"result_id": cached, "cache_hit": True,
+                        "preview_url": f"/api/results/{cached}/file",
+                        **entry.get("meta", {})})
+    detected = rectify.detect_document_corners(work, params)
+    preview = rectify.draw_corners_preview(work, detected["corners"])
+    meta = {"corners": detected["corners"], "score": detected["score"],
+            "w": detected["w"], "h": detected["h"]}
+    result_id = cache.put(key, preview, meta)
+    return jsonify({"result_id": result_id, "cache_hit": False,
+                    "preview_url": f"/api/results/{result_id}/file", **meta})
+
+
+@bp.post("/rectify/perspective")
+def rectify_perspective():
+    """按四角做透视校正，把梯形拉回正矩形。"""
+    data = request.get_json(silent=True) or {}
+    corners = data.get("corners")
+    if not corners or len(corners) != 4:
+        return jsonify({"error": "需要四个角点 corners=[[x,y]x4]"}), 400
+    params = {"corners": corners}
+    if data.get("out_ratio"):
+        params["out_ratio"] = float(data["out_ratio"])
+    res, err = _run_op(data.get("image_id"), "perspective", params,
+                       rectify.perspective_correct)
     if err:
         return err[0], err[1]
     return jsonify(res)
